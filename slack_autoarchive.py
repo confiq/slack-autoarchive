@@ -48,7 +48,6 @@ class ChannelReaper():
 This channel has had no activity for %d days. It is being auto-archived.
 If you feel this is a mistake you can <https://get.slack.help/hc/en-us/articles/201563847-Archive-a-channel#unarchive-a-channel|unarchive this channel>.
 This will bring it back at any point. In the future, you can add '%%noarchive' to your channel topic or purpose to avoid being archived.
-This script was run from this repo: https://github.com/Symantec/slack-autoarchive
 """ % self.settings.get('days_inactive')
         alerts = {'channel_template': archive_msg}
         if os.path.isfile('templates.json'):
@@ -82,14 +81,15 @@ This script was run from this repo: https://github.com/Symantec/slack-autoarchiv
             else:
                 response = requests.get(uri, params=payload)
 
-            if response.status_code == requests.codes.ok and 'error' in response.json(
-            ) and response.json()['error'] == 'not_authed':
+            if response.status_code == requests.codes.ok and 'error' in response.json() \
+                    and response.json()['error'] == 'not_authed':
                 self.logger.error(
                     'Need to setup auth. eg, SLACK_TOKEN=<secret token> python slack-autoarchive.py'
                 )
                 sys.exit(1)
-            elif response.status_code == requests.codes.ok and response.json(
-            )['ok']:
+            elif not response.json()['ok'] and response.json().get('error', False):
+                self.logger.error("getting error from API: " + response.json()['error'])
+            elif response.status_code == requests.codes.ok and response.json()['ok']:
                 return response.json()
             elif response.status_code == requests.codes.too_many_requests:
                 retry_timeout = float(response.headers['Retry-After'])
@@ -122,7 +122,7 @@ This script was run from this repo: https://github.com/Symantec/slack-autoarchiv
         last_bot_message_datetime = too_old_datetime
 
         if 'messages' not in channel_history:
-            return (last_message_datetime, False)  # no messages
+            return last_message_datetime, False  # no messages
 
         for message in channel_history['messages']:
             if 'subtype' in message and message[
@@ -137,8 +137,8 @@ This script was run from this repo: https://github.com/Symantec/slack-autoarchiv
             last_bot_message_datetime = datetime.utcfromtimestamp(0)
         # return bot message time if there was no user message
         if too_old_datetime >= last_bot_message_datetime > too_old_datetime:
-            return (last_bot_message_datetime, False)
-        return (last_message_datetime, True)
+            return last_bot_message_datetime, False
+        return last_message_datetime, True
 
     def is_channel_disused(self, channel, too_old_datetime):
         """ Return True or False depending on if a channel is "active" or not.  """
@@ -149,6 +149,7 @@ This script was run from this repo: https://github.com/Symantec/slack-autoarchiv
         payload['channel'] = channel['id']
         channel_history = self.slack_api_http(api_endpoint=api_endpoint,
                                               payload=payload)
+
         (last_message_datetime, is_user) = self.get_last_message_timestamp(
             channel_history, datetime.fromtimestamp(float(channel['created'])))
         # mark inactive if last message is too old, but don't
@@ -198,7 +199,7 @@ This script was run from this repo: https://github.com/Symantec/slack-autoarchiv
     def archive_channel(self, channel, alert):
         """ Archive a channel, and send alert to slack admins. """
         api_endpoint = 'channels.archive'
-        stdout_message = 'Archiving channel... %s' % channel['name']
+        stdout_message = 'Archiving channel... #%s' % channel['name']
         self.logger.info(stdout_message)
 
         if not self.settings.get('dry_run'):
