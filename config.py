@@ -21,4 +21,5 @@ def get_channel_reaper_settings():
         'whitelist_keywords': os.environ.get('WHITELIST_KEYWORDS', ''),
         'skip_subtypes': {'channel_leave', 'channel_join'},
         'skip_channel_str': os.environ.get('SLACK_SKIP_PURPOSE', '%noarchive'),
+        'debugging': os.environ.get('DEBUGGING', False),
     }

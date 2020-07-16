@@ -9,7 +9,7 @@ import os
 import sys
 import time
 import json
-
+import logging
 # not standard imports
 import requests
 from config import get_channel_reaper_settings
@@ -23,7 +23,8 @@ class ChannelReaper():
 
     def __init__(self):
         self.settings = get_channel_reaper_settings()
-        self.logger = get_logger('channel_reaper', './audit.log')
+        self.logger = get_logger('channel_reaper', './audit.log',
+                                 logging.DEBUG if self.settings['debugging'] else logging.INFO)
 
     def get_whitelist_keywords(self):
         """
@@ -83,19 +84,17 @@ This will bring it back at any point. In the future, you can add '%%noarchive' t
 
             if response.status_code == requests.codes.ok and 'error' in response.json() \
                     and response.json()['error'] == 'not_authed':
-                self.logger.error(
-                    'Need to setup auth. eg, SLACK_TOKEN=<secret token> python slack-autoarchive.py'
-                )
+                self.logger.error('Need to setup auth. eg, SLACK_TOKEN=<secret token> python slack-autoarchive.py')
                 sys.exit(1)
             elif not response.json()['ok'] and response.json().get('error', False):
                 self.logger.error("getting error from API: " + response.json()['error'])
             elif response.status_code == requests.codes.ok and response.json()['ok']:
+                self.logger.debug(f"slack API resonsde for {api_endpoint}: " + str(response.json()))
                 return response.json()
             elif response.status_code == requests.codes.too_many_requests:
                 retry_timeout = float(response.headers['Retry-After'])
                 # pylint: disable=too-many-function-args
-                return self.slack_api_http(api_endpoint, payload, method,
-                                           False, retry_timeout)
+                return self.slack_api_http(api_endpoint, payload, method, False, retry_timeout)
         except Exception as error_msg:
             raise Exception(error_msg)
         return None
@@ -104,8 +103,7 @@ This will bring it back at any point. In the future, you can add '%%noarchive' t
         """ Get a list of all non-archived channels from slack channels.list. """
         payload = {'exclude_archived': 1}
         api_endpoint = 'channels.list'
-        channels = self.slack_api_http(api_endpoint=api_endpoint,
-                                       payload=payload)['channels']
+        channels = self.slack_api_http(api_endpoint=api_endpoint, payload=payload)['channels']
         all_channels = []
         for channel in channels:
             all_channels.append({
@@ -114,6 +112,7 @@ This will bring it back at any point. In the future, you can add '%%noarchive' t
                 'created': channel['created'],
                 'num_members': channel['num_members']
             })
+        self.logger.debug(f'Got total {len(all_channels)}')
         return all_channels
 
     def get_last_message_timestamp(self, channel_history, too_old_datetime):
@@ -147,9 +146,8 @@ This will bring it back at any point. In the future, you can add '%%noarchive' t
         api_endpoint = 'channels.history'
 
         payload['channel'] = channel['id']
-        channel_history = self.slack_api_http(api_endpoint=api_endpoint,
-                                              payload=payload)
-
+        channel_history = self.slack_api_http(api_endpoint=api_endpoint, payload=payload)
+        self.logger.debug(f"working in channel {channel}")
         (last_message_datetime, is_user) = self.get_last_message_timestamp(
             channel_history, datetime.fromtimestamp(float(channel['created'])))
         # mark inactive if last message is too old, but don't
@@ -237,14 +235,11 @@ This will bring it back at any point. In the future, you can add '%%noarchive' t
             sys.stdout.write('.')
             sys.stdout.flush()
 
-            channel_whitelisted = self.is_channel_whitelisted(
-                channel, whitelist_keywords)
-            channel_disused = self.is_channel_disused(
-                channel, self.settings.get('too_old_datetime'))
-            if (not channel_whitelisted and channel_disused):
+            channel_whitelisted = self.is_channel_whitelisted(channel, whitelist_keywords)
+            channel_disused = self.is_channel_disused(channel, self.settings.get('too_old_datetime'))
+            if not channel_whitelisted and channel_disused:
                 archived_channels.append(channel)
-                self.archive_channel(channel,
-                                     alert_templates['channel_template'])
+                self.archive_channel(channel, alert_templates['channel_template'])
 
         self.send_admin_report(archived_channels)
 
