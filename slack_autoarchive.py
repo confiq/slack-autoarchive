@@ -87,7 +87,7 @@ This will bring it back at any point. In the future, you can add '%%noarchive' t
                 self.logger.error('Need to setup auth. eg, SLACK_TOKEN=<secret token> python slack-autoarchive.py')
                 sys.exit(1)
             elif not response.json()['ok'] and response.json().get('error', False):
-                self.logger.error("getting error from API: " + response.json()['error'])
+                self.logger.error(f"getting error from API: {response.json()['error']} for {api_endpoint}")
             elif response.status_code == requests.codes.ok and response.json()['ok']:
                 self.logger.debug(f"slack API resonsde for {api_endpoint}: " + str(response.json()))
                 return response.json()
